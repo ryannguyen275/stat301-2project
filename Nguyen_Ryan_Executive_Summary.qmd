@@ -1,0 +1,86 @@
+---
+title: "Predicting Article Shares"
+subtitle: "Executive Summary"
+author: "Ryan Nguyen"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+    echo: false
+    link-external-newwindow: true
+    
+execute:
+  warning: false
+  
+from: markdown+emoji  
+---
+```{r}
+## Loading Packages
+
+library(tidyverse)
+library(vip)
+library(tidymodels)
+```
+
+
+## Purpose
+
+The goal of this project is to find a predictive model that would be able to predict the popularity of an article, specifically the amount of shares on social networks an article would receive, utilizing a dataset with nearly 40,000 observations from Mashable.com. Because of the steeply rising prominence of online and digital news sites, predicting popularity can have major impact on these companies. By being able to predict what articles and topics will be popular, editors and journalists can be selective with their articles, edit the copy, add in other media forms, and more. 
+
+## Methods
+
+The outcome variable `shares` was log transformed to `log_shares`, since the distribution was right-skewed. 4 recipes with 6 models were tuned, including a null/baseline, linear regression, elastic net, random forest, boosted tree, and k-nearest neighbors. After tuning all models, RMSEs were calculated to determine the model that resulted in the least differences between predicted and actual values.
+
+## Results
+```{r}
+load("results/best_results.rda")
+
+best_rmse
+
+ggplot(best_rmse, aes(x = model, y = rmse, color = model)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = rmse - 1.96*se,
+                    ymax = rmse + 1.96*se), width = 0.2) +
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  labs(title = "RMSEs of Different Models") +
+  theme_minimal()
+```
+The final model selected with the lowest RMSE was the random forest model, with `mtry` set to 5 and `min_n` set to 2. The model performed moderately well, with an RMSE of 0.142 and an RSQ of 0.965, which can be shown in the graph and tibble above. 
+
+```{r}
+load("results/final_results.rda")
+
+articles_resid <- articles_pred %>% 
+  mutate(log_residuals = log_shares - .pred,
+         residuals = shares - .pred_shares)
+
+ggplot(articles_resid, aes(x = log_shares, y = log_residuals)) + 
+  geom_point(alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 0) + 
+  labs(y = "residuals",
+       title = "Residual Plot of Shares (Log Transformed)")
+```
+
+From these graphs, the relationship between predicted values and actual values have a linear relationship; however, it does not align with a perfectly correlated line with a slope of one. There seems to be some variance in the outcome variable `log_shares` and `shares` that the model does not explain.
+
+```{r}
+final_results
+```
+
+
+For the final model, the RMSE is 0.142 for the log scale, which indicates a fairly successful model. This means the average difference between the predicted values and actual values is around 0.142. However, the RMSE for the original scale is 6,362, which is much greater and can seem as though the model performed poorly. It is important to note the scale of the range of `shares` when looking at this metric. `shares` has a range of 843,299 and a standard deviation of 11,627. The RMSE means that predicted shares and actual shares, on average, has a difference of 6,362, which means our model did not perform the best. When looking at the RSQ, the log transformed scale has a value of 0.965. Since this is really close to 1, the model performed really well. The RSQ for the original scale is 0.828, which means the model on the original scale performed moderately well. This makes sense as the original scale will have greater range and differences, so less of the variation can be explained by the model. Again, the RMSE is less than the RMSE of the null, which was 0.403. Therefore, the effort of of building the predictive model seemed to pay off.
+
+## Conclusions
+
+Because the model performed fairly successfully, this model can be useful for Mashable.com as well as other media sites to predict the popularity of their articles and topics. This can be significant for these companies to drive readers to their sites, increase ad sales, build consumer base, and drive revenue.
+
+While it performed initially well, there is room for improvement. Future projects can involve a recipe with the two important predictor variables found, `kw_avg_avg` and `kw_max_avg`. They can also look into other variables, including the number of clicks an article receives on the site, how long people spent on an article, and the amount of likes an article may receive. Third, future projects should investigate what outside factors that correlate the outcome variable `log_shares` may be, in order to create a residual plot that is randomly scattered. Additionally, projects should explore various ways to omit the outliers in order to improve the model. Lastly, it would be interesting to turn this regression problem into a classification problem, simply determining if an article is popular or not. 
+
+Overall, this model can be helpful for news and media sites, and its impacts are relevant and significant. With more time, the model could be improved in a multitude of ways that would further drive success for journalists.
+
+## References
+
+Online News Popularity Data Set. UCI Machine Learning Repository: Online News Popularity Data Set. (n.d.). Retrieved March 13, 2023, from <https://archive.ics.uci.edu/ml/datasets/online+news+popularity>
+
+Pew Research Center. (2023, January 9). *Digital News Fact sheet*. Pew Research Center's Journalism Project. Retrieved March 13, 2023, from <https://www.pewresearch.org/journalism/fact-sheet/digital-news/#economics>

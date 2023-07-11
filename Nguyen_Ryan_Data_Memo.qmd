@@ -1,0 +1,30 @@
+---
+title: "Final Project Data Memo"
+subtitle: "Data Science 2 with R (STAT 301-2)"
+author: "Ryan Nguyen"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: show
+    link-external-newwindow: true
+    
+execute:
+  warning: false
+  
+from: markdown+emoji  
+---
+
+## Dataset Overview
+
+The dataset that I have chosen for my final project is a dataset from Data Science Dojo that is about Online News Popularity. It can be found [here](https://code.datasciencedojo.com/datasciencedojo/datasets/tree/master/Online%20News%20Popularity). The dataset is huge, with 39,644 observations and 61 variables. It summarizes a heterogenous set of features about articles published by Mashable news in a period of two years. Each observation is a single article from the site, with quantitative data about the article (number of images, words, videos, etc.), its popularity (polarity, text subjectivity, number of shares, etc.), and its topics (keywords, centers, etc.). There is no missingness, and I will not have to join two or more data sources together. It is a simple download from the internet.
+
+## Statement and Description
+The response variable is the number of shares in social networks that each article will get. Using the data from other articles, we can create a model that predicts the number of shares a new article could receive on social networks. This is a regression problem since we are using the model to find the number of shares (the y variable is numeric). I suspect that the variables that will be useful include date it was published, polarity of words, and subjectivity.
+
+## Proposed Project Timeline
+As we head into Week 4, I hope to load in my dataset this week, and begin my analysis as early as possible (Week 5 or 6). Ideally, I'd begin the analysis early to have any questions answered and troubleshoot anything with professors/TAs soon. I'd love to have everything finalized before Week 10 in order to receive feedback prior to presentations via Zoom. 
+
+## Potential Difficulties
+While there is not significant missingness with this data, I think a potential difficulty with it is in how large the dataset is. With so many observations, it's important to avoid overfitting. Additionally, with so many variables, I need to be deliberate and specific with the variables and combinations I choose, in order to find the ones that are most effective in modeling.

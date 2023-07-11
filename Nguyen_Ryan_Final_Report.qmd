@@ -1,0 +1,307 @@
+---
+title: "Predicting Article Shares"
+subtitle: "Stat 320-2 Final Report"
+author: "Ryan Nguyen"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+    echo: false
+    link-external-newwindow: true
+    
+execute:
+  warning: false
+  
+from: markdown+emoji  
+---
+
+```{r}
+# Loading Packages
+library(tidyverse)
+library(tidyverse)
+library(tidymodels)
+library(gridExtra)
+library(kableExtra)
+library(vip)
+library(doMC)
+library(parallel)
+
+registerDoMC(cores = 4)
+
+set.seed(13)
+```
+
+## Introduction
+
+Online news has become a fundamental part of our daily lives throughout the 21st century. Media and news sites are now a multibillion-dollar industry, with digital advertising surpassing \$152 billion in 2020 and over 32 million monthly unique visitors (Pew Research Center, 2023). With so much at stake, editors and journalists are tasked with the job of deciding what articles and topics will become popular. This can inform a multitude of business decisions, including hiring processes, allocating resources, and selecting content that will maintain high readership, build a loyal consumer base, and draw revenue.
+
+In this project, the objective is to predict the popularity of an article, with the number of shares an article will receive on social networks. The dataset used is sourced from the University of California Irvine Machine Learning Repository, summarizing a heterogeneous set of features about articles published by Mashable in a period of two years. By being able to predict our outcome variable, shares, media sites, along with Mashable, are able to see what variables are important in predicting the popularity of an article and decide which articles to publish or not based on other factors.
+
+## Data Overview
+
+This might be more of an Exploratory Data Analysis; especially if the data is completely new to you. At minimum the response variable should be explored and analyzed in detail. Along with an inspection of the data for missingness and severe class imbalance of categorical data. The previous analyses should be conducted on the entire dataset. Further exploration such as exploring relationships and transformations should be conducted on either a standalone dataset used only for an EDA or some portion of the training dataset from the initial split (can put it back in to the training set when building models). Data from the final testing dataset (performance dataset) should not be used for this. This is a key step in feature engineering.
+
+The dataset is large, with over 39,000 observations and 61 variables. Each observation is a single article from the site, with quantitative data about the article (number of images, words, videos, etc.), its popularity (polarity, text subjectivity, number of shares, etc.), and its topics (keywords, data channels, etc.). The data is rather clean-- no variables have any missingness. There are two identifier variables, url and time delta (number of days between article publication and dataset acquisition).
+
+To begin looking at our data, we can investigate the distribution of shares to see if it is symmetric.
+
+```{r}
+# load in initial data
+articles_1 <- read_csv("data/OnlineNewsPopularity.csv") %>% 
+  janitor::clean_names()
+```
+
+```{r}
+# distribution 
+articles_1 %>% 
+  summarise(mean = mean(shares),
+            min = min(shares),
+            q1 = quantile(shares, probs = 0.25),
+            median = median(shares),
+            q3 = quantile(shares, probs = 0.75),
+            max = max(shares),
+            sd = sd(shares))
+```
+
+```{r}
+# skimr::skim_without_charts(articles_1)
+```
+
+As we can see in this tibble, the distribution of shares is extremely spread out, with the standard deviation being 11,626.95. The maximum value and the most shares an article received is 843,300, the minimum value and the least shares an article received is 1, the median is 1400, which is less than the mean 3,395.38, meaning the distribution of shares is right-skewed.
+
+```{r}
+ggplot(articles_1, aes(x = shares)) +
+  geom_histogram(bins = 50) +
+  labs(title = "Distribution of Shares")
+```
+
+Now, looking at a visual of the distribution of shares in the dataset, it is incredibly right-skewed. This makes sense, as most articles are going to group together in popularity towards the lower end of the scale, with a few outliers of really popular articles. In order to make the distribution more symmetric, we can utilize a log transformation on the outcome variable, shares.
+
+```{r}
+ggplot(articles_1, aes(x = log10(shares))) +
+  geom_histogram(bins = 50)+
+  labs(title = "Distribution of Shares (Log-Transformed")
+```
+
+As we can see here, the distribution is much more symmetric and much better for modeling. Therefore, we can apply a log transformation on shares to become our new outcome variable, `log_shares`. This was done on the entire data set.
+
+To further explore relationships between `log_shares` and other variables, the data is split into a training dataset and testing dataset with a 0.8 proportion. The training dataset has 31,714 observations and the testing dataset has 7,930 observations. The dataset is also stratified by the response variable `log_shares`. With this training dataset, visual relationships can be illustrated.
+
+```{r}
+# load in data
+load("data/articles_split.rda")
+```
+
+```{r}
+data_channel_graph <- articles_train %>% 
+  group_by(data_channel) %>%
+  summarise(sum = sum(log_shares),
+            count = n()) %>% 
+  mutate(avg_shares = sum/count) %>% 
+  filter(data_channel != "") %>% 
+  ggplot(aes(x = data_channel, y = avg_shares)) +
+           geom_col() +
+  labs(title = "average shares for each data channel", x = "data channel", y = "Average Log_Shares")
+
+keyword_graph <- articles_train %>%
+  ggplot(aes(x = num_keywords, y = log_shares)) +
+  geom_col() + 
+  labs(x = "number of keywords", y = "log_shares" ,title = "Log_Shares vs. Number of Keywords")
+
+grid.arrange((data_channel_graph), (keyword_graph), ncol = 2)
+```
+
+In the visuals above, we can see there are some relationships between `log_shares` and `data_channel`, with social media being the most popular data channel, and between `log_shares` and `num_keywords`.
+
+```{r}
+positive_graph <- articles_train %>%
+  filter(rate_positive_words > 0, rate_positive_words < 1) %>% 
+  ggplot(aes(x = rate_positive_words, y = log_shares)) +
+  geom_point(alpha = 0.2) + 
+  labs(x = "rate of positive words", title = "Log_Shares vs. Rate Of Positive Words")
+
+negative_graph <- articles_train %>%
+  filter(rate_negative_words > 0 ) %>% 
+  ggplot(aes(x = rate_negative_words, y = log_shares)) +
+  geom_point(alpha = 0.2) + 
+  labs(x = "rate of negative words", title = "Log_Shares vs. Rate Of Negative Words")
+
+grid.arrange(positive_graph, negative_graph, ncol = 2)
+```
+
+In these plots, the visual relationship between the `log_shares` vs. the rate of positive words and vs. the rate of negative words seem to be mirrored of one another. However, there does not seem to be a strong linear relationship between `log_shares` and these variables.
+
+```{r}
+polar_pos <-articles_train %>%
+  filter(avg_positive_polarity > 0 ) %>% 
+  ggplot(aes(x =  avg_positive_polarity, y = log_shares)) +
+  geom_point(alpha = 0.2) +
+  labs(x = "average polarity of positive words", title = "Log_Shares vs. Avg. Polarity Of Positive Words")
+
+polar_neg <- articles_train %>%
+  filter(avg_negative_polarity < 0 ) %>% 
+  ggplot(aes(x =  avg_negative_polarity, y = log_shares)) +
+  geom_point(alpha = 0.2) +
+  labs(x = "average polarity of negative words", title = "Log_Shares vs. Avg. Polarity Of Negative Words")
+
+grid.arrange(polar_pos, polar_neg, ncol = 2)
+```
+
+Here, the plots between the `log_shares` vs. the average polarity of positive words and vs. the average polarity of negative words seem to be mirrored of one another, similar to the rates. Again, there does not seem to be a strong linear relationship between `log_shares` and these variables.
+
+Overall, through our exploratory data analysis, we can see that there are not strong linear relationships between `log_shares` and most of our intuitive variables.
+
+## Methods
+
+After our exploratory data analysis, the training dataset is ready for resampling. This is to improve the accuracy of the population parameter and help prevent over-fitting.
+
+### Resampling
+
+The resampling method used is repeated v-fold cross-validation, where the training dataset is randomly partitioned into sets of roughly equal size. Then, final performance measures is the average of each of the replicates. Because of the large size of the training data, it was split into 5 sets, repeated 3 times. The folds are also stratified by the outcome variable `log_shares`.
+
+### Recipes
+
+To further improve our machine learning model training, recipes are used to prepare the data for modeling, with pipeable sequences for feature engineering. Four recipes were created: 1. Kitchen Sink, 2. Only Intuitive Predictors, 3. Interaction Terms with Data Channel and Keywords, and 4. Other Lead Predictors with Interaction Terms. By utilizing varying recipes, we can see which performs the best in our machine learning model training. Some steps are used in all recipes because of the necessity. `step_normalize()` was used to center and scale all of the predictors. `step_nzv()` was used to delete any near zero-variance predictors that have a single unique value. `step_rm()` was used to remove `data_channel` and `day_of_the_week` since they are already one-hot encoded into separate columns, and `shares` since it would have a direct relationship with the outcome variable `log_shares`.
+
+#### Recipe 1: Kitchen Sink
+
+The first recipe is the kitchen sink model, where all variables are thrown into the models, since we are not looking at specific ones. Here, we only care about the end results.
+
+#### Recipe 2: Only Lead Predictors
+
+For the second recipe, the predictive importance of certain variables, `rate_positive_words` and `rate_negative_words` are explored. Here, the relationship with the popularity of an article and the rate of positive words and negative words is investigated. Here, the main recipe is `(log_shares ~ rate_negative_words + rate_positive_words, data = articles_train)`.
+
+#### Recipe 3: Interaction Terms
+
+Based on the exploratory data analysis above, we can see there is a slight relationship between `log_shares` and data channels and the number of keywords. Given that the data channel and topic of an article may intuitively have an impact on the keywords in that article, we can see if there is an impact in adding interaction. In recipe 3, `step_interact(~ num_keywords: starts_with("data_channel"))` is added.
+
+#### Recipe 4: Other Lead Predictors + Interaction Terms
+
+For the final recipe, the polarity of the article and the subjectivity of the article and title are explored. Here, the potential importance of polarity and subjectivity is examined. The recipe is `(log_shares ~ avg_positive_polarity + avg_negative_polarity + global_subjectivity + title_subjectivity, data = articles_train)` with an interaction step `step_interact(~ global_subjectivity: title_subjectivity)`.
+
+The recipes are prepped and bake, using `prep()` and `bake()`, on the training dataset to compute everything for pre-processing steps, then returning the pre-processed training dataset.
+
+### Models
+
+The first model is the null model, which is simple and uninformative. It does not have any main arguments, and creates a baseline for modeling to compare all other models.
+
+The second model is the linear regression model, since this is a regression problem (not classification). Again, there are parameters to tune, so a grid is not created.
+
+The third model that will be fitted is the elastic net or penalized regression model. Here, `penalty()`, which is the amount of regularization, and `mixture()`, which is the proportion of lasso penalty, are tuned. A grid of the tuning parameters is created with 5 levels.
+
+The fourth model is the random forest model. Here, multiple decision trees are made and stratified into regions. Predictions use the mean response value in the region it belongs. `min_n`, the minimal node size of data points to split, and `mtry`, the sample predictors, are tuned. `mtry` is updated to (1,10) to decrease computation time. A grid is created with 5 levels.
+
+The fifth model is the boosted tree model. Multiple sequential simple regression trees are combined into a better model, each one training on the residuals from previous trees. All of the trees are combined using an additive model, with their weights being estimated with gradient descent. In boosted trees, `min_n`, `mtry`, and `learn_rate`, or how much each tree should impact the next/learning rate, are all tuned. Again, `mtry` is updated to (1,10) to decrease computation time and a grid is created with 5 levels.
+
+Finally, the last model is the k-nearest neighbors model. This algorithm is dependent on the distance of a point from other data points, where the distance is calculated with every training data point and the K that is smallest is chosen. `neighbors` is tuned and updated to the range (1,50) to prevent over-fitting.
+
+### Fitting the Models
+
+Each model is set up to run the four recipes simultaneously. From here, the workflow set for each engine is tuned in separate R scripts and saved. Each of the models (excluding the null) are all ran with each of the 4 recipes, using the folds. The results will be compared using their RMSE, or root mean squared error. The RMSE is a measure of how far the predicted values are from the actual values for each model, so the lowest RMSE represents the best model.
+
+## Model Building & Selection
+
+```{r}
+load("results/best_results.rda")
+best_rmse
+
+ggplot(best_rmse, aes(x = model, y = rmse, color = model)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = rmse - 1.96*se,
+                    ymax = rmse + 1.96*se), width = 0.2) +
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  labs(title = "RMSEs of Different Models") +
+  theme_minimal()
+```
+
+After the workflow sets were ran, the workflow with the lowest RMSE for each model is selected. Again, since the RMSE represents how far from the regression line data points are, the models with the lowest RMSE's performed the best in predicting `log_shares`. They are compared in the tibble and plot above.
+
+As we can see, the random forest model with recipe 3 performed the best, with an RMSE of 0.3698. The next best model was the boosted tree model with recipe 3, resulting in an RMSE of 0.3712. The third best was the random elastic net model with recipe 3, with an RMSE of 0.3773. Thus, our best three models performed their best with recipe 3. The fourth best model was the the k-nearest neighbor with recipe 1 and an RMSE of 0.3827. Finally, the linear regression model performed a bit worse than the others, with recipe 4 and an RMSE of 0.4019, which is close to the null model which resulted in an RMSE of 0.4034.
+
+The tuning parameters for the models above can be pulled, in order to analyze how tuning can be adjusted when fitting similar data in the future.
+
+```{r}
+best_parameters
+```
+
+In this tibble, the elastic net `penalty` was tuned to 0.00316 and the mixture to 0.05. The random forest tuned the `mtry` to 5 and `min_n` to 2, which means these levels were the best parameters for random forest. However, in boosted tree, the `mtry` was tuned to 10, which was the upper limit we set for `mtry` for computation times. Therefore, since it reached the upper limit, further tuning should be explored increasingly, to find the best parameter. `min_n` was 40 for boosted tree and the learn rate was 0.316. Finally, the `neighbors` parameter for the k-nearest neighbor reached its upper limit of 50, which means a greater upper limit for this tuning parameter can be explored. With a dataset so large, computation time can be enduring, so exploring data similar to this one might need a machine with higher processing power to increase the parameters.
+
+Therefore, the random forest model with recipe 3, `mtry` tuned to 5 and `min_n` tuned to 2 is chosen as the final model. It is not surprising that this model won since it overcomes limitations of decision trees by taking the average of a great quantity of them, and is more robust than linear regression and elastic net. The boosted tree model being the second best was also not surprising, given the amount of decision trees that learn from one another.
+
+## Final Model Analysis
+
+After fitting the final model to the testing dataset, predicted and observed values are given for the outcome variable `log_shares`. Since it was log transformed, the values should also be exponentiated to its original scale for further analysis. A sample can be seen below.
+
+```{r}
+load("results/final_results.rda")
+
+articles_pred %>% 
+  head(5)
+```
+
+From here, plots can be created to analyze the winning model.
+
+```{r}
+log_plot <- ggplot(articles_pred, aes(x = log_shares, y = .pred)) + 
+  geom_point(alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 1) + 
+  labs(title = "Predicted Value vs. Actual Value (Log Transformed)",
+       y = "Predicted Value",
+       x = "Actual Value")
+
+shares_plot <- articles_pred %>%
+  filter(shares <800000) %>% 
+  ggplot(aes(x = shares, y = .pred_shares)) + 
+  geom_point(alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 1) +
+  labs(title = "Predicted Value vs. Actual Value",
+       y = "Predicted Value",
+       x = "Actual Value")
+
+grid.arrange(log_plot, shares_plot, ncol = 2)
+```
+
+From these graphs, the relationship between predicted values and actual values have a linear relationship; however, it does not align with a perfectly correlated line with a slope of one. There seems to be some variance in the outcome variable `log_shares` and `shares` that the model does not explain.
+
+Now looking at specific metrics, RMSE and RSQ (R-Squared) values can be calculated for both the log transformed scale and the original scale. The RSQ coefficient determines the proportion of variance of the outcome variable that can be explained by our predictor variables in the models. The closer the RSQ value is to 1, the better the model fits the data.
+
+```{r}
+final_results
+```
+
+For the final model, the RMSE is 0.142 for the log scale, which indicates a fairly successful model. This means the average difference between the predicted values and actual values is around 0.142. However, the RMSE for the original scale is 6,362, which is much greater and can seem as though the model performed poorly. It is important to note the scale of the range of `shares` when looking at this metric. `shares` has a range of 843,299 and a standard deviation of 11,627. The RMSE means that predicted shares and actual shares, on average, has a difference of 6,362, which means our model did not perform the best. When looking at the RSQ, the log transformed scale has a value of 0.965. Since this is really close to 1, the model performed really well. The RSQ for the original scale is 0.828, which means the model on the original scale performed moderately well. This makes sense as the original scale will have greater range and differences, so less of the variation can be explained by the model. Again, the RMSE is less than the RMSE of the null, which was 0.403. Therefore, the effort of of building the predictive model seemed to pay off.
+
+```{r}
+articles_resid <- articles_pred %>% 
+  mutate(log_residuals = log_shares - .pred,
+         residuals = shares - .pred_shares)
+
+ggplot(articles_resid, aes(x = log_shares, y = log_residuals)) + 
+  geom_point(alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 0) + 
+  labs(y = "residuals",
+       title = "Residual Plot of Shares (Log Transformed)")
+```
+
+The residual plot displays the differences between actual and predicted values, and the plot should show a random scatter of points forming an approximately constant width around the identity line at y = 0. In this residual plot, the residuals are strongly correlated with the dependent variable, `log_shares`. That means there's some variance in the outcome variable that the model is not explaining.
+
+```{r}
+vip_plot
+```
+
+Above displays a plot of variable importance scores for the predictors in the model. According to this plot, the two most important predictor variables for `log_share` was `kw_avg_avg`, or the average shares for the average keyword, and `kw_max_avg`, or the maximum shares for the average keyword. These were not the intuitive variables that were selected earlier, but the average and maximum shares for the keywords does seem intuitive in predicting the overall shares an article will receive.
+
+## Conclusion
+
+Because the model performed fairly successfully, this model can be useful for Mashable.com as well as other media sites to predict the popularity of their articles and topics. This can be significant for these companies to drive readers to their sites, increase ad sales, build consumer base, and drive revenue.
+
+While it performed initially well, there is room for improvement. First, it was found that the important predictor variables were `kw_avg_avg` and `kw_max_avg`. For future projects, a recipe that involves these two, or even an interaction, can be investigated to see if it improves the prediction. Secondly, while this dataset had many variables, other variables may be looked into, including the number of clicks an article receives on the site, how long people spent on an article, and the amount of likes an article may receive. While we looked at shares on all social networks, it would be helpful to see which social networks resulted in more clicks. Additionally, the residual plot shows that there seems to be outside factors that correlate the outcome variable `log_shares` in the model, which might explain why the residual plot is not randomly scattered. Future projects should investigate what these factors may be, in order to create a residual plot that is randomly scattered. Furthermore, the dataset had upper outliers that may have impacted the modeling. Future projects should explore various ways to omit the outliers in order to improve the model. In addition, this project was a regression problem. Although it may be interesting to turn it into a classification problem. Future projects can do this by setting a margin of shares that an article needs to receive (potentially amount of shares to be top 75% of articles), as popular. Then, the model can classify articles as either popular or nonpopular.
+
+Overall, this model can be helpful for news and media sites, and its impacts are relevant and significant. With more time, the model could be improved in a multitude of ways that would further drive success for journalists.
+
+## References
+
+Online News Popularity Data Set. UCI Machine Learning Repository: Online News Popularity Data Set. (n.d.). Retrieved March 13, 2023, from <https://archive.ics.uci.edu/ml/datasets/online+news+popularity>
+
+Pew Research Center. (2023, January 9). *Digital News Fact sheet*. Pew Research Center's Journalism Project. Retrieved March 13, 2023, from <https://www.pewresearch.org/journalism/fact-sheet/digital-news/#economics>

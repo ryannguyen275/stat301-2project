@@ -1,0 +1,33 @@
+---
+title: "Final Project Checkup Memo"
+subtitle: "Data Science 2 with R (STAT 301-2)"
+author: "Ryan Nguyen"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: show
+    link-external-newwindow: true
+    
+execute:
+  warning: false
+  
+from: markdown+emoji  
+---
+
+## Data Obtained & Cleaned
+My data has been obtained and organized. I have downloaded the original csv, read it in, cleaned it, and resaved it. It is in a folder titled "data" in my RProject.
+
+I utilize the `janitor::clean_names()` function to set standard naming convention for the variables, making each name unique, consist only of the _ character, numbers, and letters. Everything has been read-in correctly, as all of the variables are read-in as numeric since they are. However, it appears that some variables have already been one-hot encoded. For example, the day of the week the article is published is split into 7 columns: "weekday_is_monday", "weekday_is_tuesday", etc. If the article was published on a monday, the value is 1 in that column, and if it was not, the value is 0. This is for every column. The data channel is similar, with "data_channel_is_entertainment", etc. This is helpful for modeling; just for visualization purposes, I un-did the one-hot encoding in order to create barcharts of the days of the week and data channels that resulted in the most article shares. Furthermore, there does not seem to be any major missingness issues. Although, after combining the data channels into one column, we see that some variables are missing data channels (meaning the value was 0 for all different data channels categories).
+
+## Outcome Variable 
+Again, my outcome variable is `shares`, looking at how we can predict the number of shares an article receives based on the predictor variables. There are no missingness issues with this outcome variable. While plotting the distribution, we see that the values are really spread out, with the min being 1, q1 being 946, the median being 1400, q3 being 2800, and the max being 843,300. This means that a lot of our data is fairly centralized into the 1000s range, with some articles having extremely high shares compared to the rest. When modeling and exploring the data, it is important to keep this spread out distribution in mind. 
+
+## Splitting the Data
+There are 39,644 observations, so I will be conducting an initial split. I will be splitting the data in the typical 80/20 proportion. I will be using stratified sampling on my outcome variable `shares` since there is such a spread out distribution and high standard deviation. By stratifying, I hope to ensure the data is able to take into account the observations with much higher number of shares. At this point, I have completed the data cleaning and most of the data exploration, meaning I am preparing to split the data and considering the recipe. 
+
+
+
+
+
